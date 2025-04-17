@@ -1,11 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from supabase import create_client, Client
-import os
-import openai
 from dotenv import load_dotenv
+import os
+from supabase import create_client, Client
+from openai import OpenAI
 
 load_dotenv()
+
+app = FastAPI()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -16,46 +18,34 @@ print(f"✅ SUPABASE_KEY (début) : {SUPABASE_KEY[:20]}...")
 print(f"✅ OPENAI_API_KEY (début) : {OPENAI_API_KEY[:20]}...")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-openai.api_key = OPENAI_API_KEY
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
-app = FastAPI()
 
 class Projet(BaseModel):
     description_projet: str
 
+
 @app.post("/chiffrage")
-def generer_devis(projet: Projet):
+async def chiffrage(projet: Projet):
     try:
-        prompt = f"""
-Tu es un assistant expert en devis pour un atelier de menuiserie-agencement.
-Génère une liste de 5 lignes de devis correspondant à la demande suivante :
-\"{projet.description_projet}\".
+        print("🔍 Envoi à OpenAI...")
 
-Chaque ligne de devis doit contenir :
-- une désignation précise du produit ou service
-- un prix unitaire HT réaliste
-- une unité métier cohérente (ex : m², ml, unité, heure, etc.)
+        messages = [
+            {"role": "system", "content": "Tu es un expert en chiffrage de travaux d’aménagement extérieur."},
+            {"role": "user", "content": f"Fais-moi 5 propositions de devis pour ce projet : {projet.description_projet}. Format JSON avec désignation, prix_unitaire_ht et unité_metier."}
+        ]
 
-Retourne uniquement un JSON de ce type :
-[
-  {{
-    "designation": "...",
-    "prix_unitaire_ht": 123.45,
-    "unite_metier": "..."
-  }},
-  ...
-]
-        """
-
-        response = openai.ChatCompletion.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            temperature=0.5,
-            messages=[{"role": "user", "content": prompt}]
+            messages=messages,
+            temperature=0.7
         )
 
-        message = response.choices[0].message["content"]
-        devis = eval(message)  # À sécuriser si besoin
-        return {"devis": devis}
+        ai_reply = response.choices[0].message.content
+        print("✅ Réponse OpenAI reçue")
+
+        return {"devis": ai_reply}
 
     except Exception as e:
+        print(f"❌ Erreur : {e}")
         raise HTTPException(status_code=500, detail=str(e))

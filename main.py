@@ -1,24 +1,37 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from supabase import create_client, Client
+import os
 
-# Configuration Supabase
-SUPABASE_URL = "https://rcldqrzhcknyukbshxbr.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."  # clé OK déjà utilisée
+# Récupération des credentials Supabase depuis les variables d’environnement
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+# Vérification minimale
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("⚠️ Variables d’environnement SUPABASE_URL ou SUPABASE_KEY manquantes.")
+
+# === DEBUG TEMPORAIRE ===
+print("✅ SUPABASE_URL :", SUPABASE_URL)
+print("✅ SUPABASE_KEY (début) :", SUPABASE_KEY[:6], "...")
+# =========================
+
+# Initialisation Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# API
+# Initialisation FastAPI
 app = FastAPI()
 
+# Modèle pour la requête
 class Demande(BaseModel):
     description_projet: str
 
+# Endpoint POST /chiffrage
 @app.post("/chiffrage")
 def chiffrage(demande: Demande):
     description = demande.description_projet.lower()
 
-    # Récupération des données
+    # Requête vers Supabase
     response = supabase.table("amenagements_exterieurs").select("*").execute()
     lignes = response.data
 

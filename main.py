@@ -1,51 +1,61 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from supabase import create_client, Client
 import os
+import openai
+from dotenv import load_dotenv
 
-# Récupération des credentials Supabase depuis les variables d’environnement
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+load_dotenv()
 
-# Vérification minimale
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("⚠️ Variables d’environnement SUPABASE_URL ou SUPABASE_KEY manquantes.")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# === DEBUG TEMPORAIRE ===
-print("✅ SUPABASE_URL :", SUPABASE_URL)
-print("✅ SUPABASE_KEY (début) :", SUPABASE_KEY[:6], "...")
-# =========================
+print(f"✅ SUPABASE_URL : {SUPABASE_URL}")
+print(f"✅ SUPABASE_KEY (début) : {SUPABASE_KEY[:20]}...")
+print(f"✅ OPENAI_API_KEY (début) : {OPENAI_API_KEY[:20]}...")
 
-# Initialisation Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+openai.api_key = OPENAI_API_KEY
 
-# Initialisation FastAPI
 app = FastAPI()
 
-# Modèle pour la requête
-class Demande(BaseModel):
+class Projet(BaseModel):
     description_projet: str
 
-# Endpoint POST /chiffrage
 @app.post("/chiffrage")
-def chiffrage(demande: Demande):
-    description = demande.description_projet.lower()
+def generer_devis(projet: Projet):
+    try:
+        prompt = f"""
+Tu es un assistant expert en devis pour un atelier de menuiserie-agencement.
+Génère une liste de 5 lignes de devis correspondant à la demande suivante :
+\"{projet.description_projet}\".
 
-    # Requête vers Supabase
-    response = supabase.table("amenagements_exterieurs").select("*").execute()
-    lignes = response.data
+Chaque ligne de devis doit contenir :
+- une désignation précise du produit ou service
+- un prix unitaire HT réaliste
+- une unité métier cohérente (ex : m², ml, unité, heure, etc.)
 
-    # Filtrage intelligent
-    resultats = []
-    for ligne in lignes:
-        if ligne["designation"] and any(mot in ligne["designation"].lower() for mot in description.split()):
-            resultats.append({
-                "designation": ligne["designation"],
-                "prix_unitaire_ht": ligne["prix_unitaire_ht"],
-                "unite_metier": ligne["unite_metier"]
-            })
+Retourne uniquement un JSON de ce type :
+[
+  {{
+    "designation": "...",
+    "prix_unitaire_ht": 123.45,
+    "unite_metier": "..."
+  }},
+  ...
+]
+        """
 
-    if not resultats:
-        return {"devis": "Aucun poste trouvé dans la base pour cette description."}
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            temperature=0.5,
+            messages=[{"role": "user", "content": prompt}]
+        )
 
-    return {"devis": resultats}
+        message = response.choices[0].message["content"]
+        devis = eval(message)  # À sécuriser si besoin
+        return {"devis": devis}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

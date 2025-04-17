@@ -1,51 +1,47 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
-from dotenv import load_dotenv
-import os
 from supabase import create_client, Client
-from openai import OpenAI
+import os
+from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI()
-
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-print(f"✅ SUPABASE_URL : {SUPABASE_URL}")
-print(f"✅ SUPABASE_KEY (début) : {SUPABASE_KEY[:20]}...")
-print(f"✅ OPENAI_API_KEY (début) : {OPENAI_API_KEY[:20]}...")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # ⚠️ service_role uniquement
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
+app = FastAPI()
 
-class Projet(BaseModel):
+class ChiffrageRequest(BaseModel):
     description_projet: str
 
+# fallback local
+def simulate_devis(description: str):
+    fallback_data = [
+        {"designation": "Clôture en grillage rigide - PVC", "prix_unitaire_ht": 85.0, "unite_metier": "ml"},
+        {"designation": "Clôture en grillage rigide - acier galvanisé", "prix_unitaire_ht": 95.0, "unite_metier": "ml"},
+    ]
+    return fallback_data
 
 @app.post("/chiffrage")
-async def chiffrage(projet: Projet):
+def get_devis(request_data: ChiffrageRequest):
     try:
-        print("🔍 Envoi à OpenAI...")
+        query = request_data.description_projet
+        print(f"🔍 Requête Supabase pour: {query}")
 
-        messages = [
-            {"role": "system", "content": "Tu es un expert en chiffrage de travaux d’aménagement extérieur."},
-            {"role": "user", "content": f"Fais-moi 5 propositions de devis pour ce projet : {projet.description_projet}. Format JSON avec désignation, prix_unitaire_ht et unité_metier."}
-        ]
+        response = supabase.table("amenagements_exterieurs")\
+            .select("*")\
+            .ilike("description_projet", f"%{query}%")\
+            .execute()
 
-        response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            temperature=0.7
-        )
+        devis = response.data
 
-        ai_reply = response.choices[0].message.content
-        print("✅ Réponse OpenAI reçue")
+        if not devis:
+            print("⚠️ Aucun résultat Supabase - fallback activé")
+            devis = simulate_devis(query)
 
-        return {"devis": ai_reply}
+        return { "devis": devis }
 
     except Exception as e:
-        print(f"❌ Erreur : {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return { "error": str(e) }

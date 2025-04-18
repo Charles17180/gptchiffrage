@@ -4,34 +4,35 @@ from supabase import create_client, Client
 import os
 from dotenv import load_dotenv
 
-# Chargement des variables d'environnement
+# 🔐 Charger les variables d'environnement (.env local ou Render)
 load_dotenv()
-
-# 🔐 Récupération des clés Supabase depuis le .env
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# Initialisation du client Supabase
+# ✅ Connexion à Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Création de l'application FastAPI
+# 🚀 Instance FastAPI
 app = FastAPI()
 
-# ✅ Modèle de la requête attendue
+# 📥 Modèle de la requête POST
 class ChiffrageRequest(BaseModel):
     description_projet: str
 
-# ✅ Route principale de chiffrage
+# 🔍 Route de recherche
 @app.post("/chiffrage")
 def chiffrage(request: ChiffrageRequest):
     description_projet = request.description_projet.lower()
+    mots_cles = description_projet.split()
 
     try:
-        response = supabase.table("amenagements_exterieurs") \
-            .select("*") \
-            .ilike("designation", f"%{description_projet}%") \
-            .execute()
+        # Construction dynamique de la requête avec plusieurs .ilike()
+        query = supabase.table("amenagements_exterieurs").select("*")
 
+        for mot in mots_cles:
+            query = query.ilike("designation", f"%{mot}%")
+
+        response = query.execute()
         data = response.data
 
         if not data:
@@ -41,9 +42,3 @@ def chiffrage(request: ChiffrageRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ✅ Démarrage local ET déploiement Render
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8080)

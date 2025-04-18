@@ -1,47 +1,44 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from supabase import create_client, Client
 import os
 from dotenv import load_dotenv
 
+# Charger les variables d'environnement (depuis .env)
 load_dotenv()
 
+# 🔐 Clés API à récupérer depuis ton .env
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # ⚠️ service_role uniquement
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+# Connexion Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Création de l'app FastAPI
 app = FastAPI()
 
+# ✅ Modèle de requête attendue
 class ChiffrageRequest(BaseModel):
     description_projet: str
 
-# fallback local
-def simulate_devis(description: str):
-    fallback_data = [
-        {"designation": "Clôture en grillage rigide - PVC", "prix_unitaire_ht": 85.0, "unite_metier": "ml"},
-        {"designation": "Clôture en grillage rigide - acier galvanisé", "prix_unitaire_ht": 95.0, "unite_metier": "ml"},
-    ]
-    return fallback_data
-
+# ✅ Route principale
 @app.post("/chiffrage")
-def get_devis(request_data: ChiffrageRequest):
-    try:
-        query = request_data.description_projet
-        print(f"🔍 Requête Supabase pour: {query}")
+def chiffrage(request: ChiffrageRequest):
+    description_projet = request.description_projet.lower()
 
-        response = supabase.table("amenagements_exterieurs")\
-            .select("*")\
-            .ilike("description_projet", f"%{query}%")\
+    # 🔍 Recherche simple dans la table Supabase
+    try:
+        response = supabase.table("amenagements_exterieurs") \
+            .select("*") \
+            .ilike("designation", f"%{description_projet}%") \
             .execute()
 
-        devis = response.data
+        data = response.data
 
-        if not devis:
-            print("⚠️ Aucun résultat Supabase - fallback activé")
-            devis = simulate_devis(query)
+        if not data:
+            raise HTTPException(status_code=404, detail="Aucun résultat trouvé pour ce projet")
 
-        return { "devis": devis }
+        return {"devis": data}
 
     except Exception as e:
-        return { "error": str(e) }
+        raise HTTPException(status_code=500, detail=str(e))
